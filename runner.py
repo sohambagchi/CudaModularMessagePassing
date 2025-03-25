@@ -20,8 +20,6 @@ CPU_P_CPU_C = list()
 WEAK_BEHAVIORS = list()
 
 global_filename = sys.argv[1] if len(sys.argv) > 1 else 'message_passing.csv'
-# message_passing_data_frame = pd.DataFrame(columns=['x_scope', 'y_scope', 'producer_fence', 'consumer_fence', 'memory_order', 'gpu_p_gpu_c', 'gpu_p_cpu_c', 'cpu_p_gpu_c', 'cpu_p_cpu_c', 'weak_behaviors'])
-
 
 def does_dataitem_exist(data_frame, data_item):
     for index, row in data_frame.iterrows():
@@ -89,11 +87,11 @@ message_passing_data_frame = import_dataframe()
 
 for file in os.listdir(output_folder):
     # print(file)
-    if 'RLX_RLX' not in file:
-        continue
+    # if 'RLX_RLX' not in file:
+    #     continue
     
-    if 'PRODUCER_NO_FENCE' not in file or 'CONSUMER_NO_FENCE' not in file:
-        continue
+    # if 'PRODUCER_NO_FENCE' not in file or 'CONSUMER_NO_FENCE' not in file:
+    #     continue
     
     if 'SYS' in file:
         # print(file)
@@ -103,9 +101,9 @@ for file in os.listdir(output_folder):
     #     # print(file)
     #     continue
     
-    # if any(x in file.lower() for x in ['rel_acq', 'rel_rlx', 'rlx_acq']):
-    #     if 'producer_no_fence' not in file.lower() or 'consumer_no_fence' not in file.lower():
-    #         continue
+    if any(x in file.lower() for x in ['rel_acq', 'rel_rlx', 'rlx_acq']):
+        if 'producer_no_fence' not in file.lower() or 'consumer_no_fence' not in file.lower():
+            continue
     
     
     file_parameters = file.replace('.out', '').split('-')[1:]
