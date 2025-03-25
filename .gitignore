@@ -1,0 +1,7 @@
+output/
+output_no_cache/
+*.csv
+*.txt
+venv/
+.venv/
+old/

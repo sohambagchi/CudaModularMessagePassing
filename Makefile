@@ -1,67 +1,71 @@
 NVCC = $(shell which nvcc)
-NVCCFLAGS := -std=c++14
-NVCCFLAGS += --expt-relaxed-constexpr
-NVCCFLAGS += -arch=sm_87
+NVCC_FLAGS := -std=c++14 -g -Xcompiler -O0 -Xcicc -O2 -arch=sm_87
+NVCC_FLAGS += --expt-relaxed-constexpr
+NVCC_FLAGS += -arch=sm_87
 
-OUTPUT = MP
-PTX = MP_PTX
+OUTPUT = output/MP
+# PTX = MP_PTX
 
 SRCS := message_passing.cu
 
-VAR_SCOPES = cuda\:\:thread_scope_thread cuda\:\:thread_scope_block cuda\:\:thread_scope_device cuda\:\:thread_scope_system
+VAR_SCOPES_X = X_CTA X_DEV
+VAR_SCOPES_Y = Y_CTA Y_DEV Y_SYS
 
-GPU_PRODUCER_MEMORY_ORDERS = cuda\:\:memory_order_relaxed cuda\:\:memory_order_release
-GPU_CONSUMER_MEMORY_ORDERS = cuda\:\:memory_order_relaxed cuda\:\:memory_order_acquire
-CPU_PRODUCER_MEMORY_ORDERS = std\:\:memory_order_relaxed std\:\:memory_order_release
-CPU_CONSUMER_MEMORY_ORDERS = std\:\:memory_order_relaxed std\:\:memory_order_acquire
+PRODUCER_FENCES = PRODUCER_FENCE_ACQ_REL PRODUCER_FENCE_SC PRODUCER_NO_FENCE
+PRODUCER_FENCE_SCOPES = PRODUCER_FENCE_SCOPE_CTA PRODUCER_FENCE_SCOPE_DEV PRODUCER_FENCE_SCOPE_SYS
 
-GPU_CONSUMER_FENCE_SCOPES = cuda\:\:thread_scope_system cuda\:\:thread_scope_device cuda\:\:thread_scope_block cuda\:\:thread_scope_thread
-GPU_PRODUCER_FENCE_SCOPES = cuda\:\:thread_scope_system cuda\:\:thread_scope_device cuda\:\:thread_scope_block cuda\:\:thread_scope_thread
+CONSUMER_FENCES = CONSUMER_FENCE_ACQ_REL CONSUMER_FENCE_SC CONSUMER_NO_FENCE
+CONSUMER_FENCE_SCOPES = CONSUMER_FENCE_SCOPE_CTA CONSUMER_FENCE_SCOPE_DEV CONSUMER_FENCE_SCOPE_SYS
 
-GPU_PRODUCER_FENCE_ORDERS = cuda\:\:memory_order_relaxed cuda\:\:memory_order_release cuda\:\:memory_order_acq_rel cuda\:\:memory_order_seq_cst
-GPU_CONSUMER_FENCE_ORDERS = cuda\:\:memory_order_relaxed cuda\:\:memory_order_acquire cuda\:\:memory_order_acq_rel cuda\:\:memory_order_seq_cst
+ORDERS = RLX_RLX REL_ACQ RLX_ACQ REL_RLX
 
-CPU_PRODUCER_FENCE_ORDERS = std\:\:memory_order_relaxed std\:\:memory_order_release std\:\:memory_order_acq_rel std\:\:memory_order_seq_cst
-CPU_CONSUMER_FENCE_ORDERS = std\:\:memory_order_relaxed std\:\:memory_order_acquire std\:\:memory_order_acq_rel std\:\:memory_order_seq_cst
 
-all: $(foreach var_scope,$(VAR_SCOPES),$(foreach gpu_producer_memory_order,$(GPU_PRODUCER_MEMORY_ORDERS),$(foreach gpu_consumer_memory_order,$(GPU_CONSUMER_MEMORY_ORDERS),$(foreach cpu_producer_memory_order,$(CPU_PRODUCER_MEMORY_ORDERS),$(foreach cpu_consumer_memory_order,$(CPU_CONSUMER_MEMORY_ORDERS),$(foreach gpu_consumer_fence_scope,$(GPU_CONSUMER_FENCE_SCOPES),$(foreach gpu_producer_fence_scope,$(GPU_PRODUCER_FENCE_SCOPES),$(foreach gpu_producer_fence_order,$(GPU_PRODUCER_FENCE_ORDERS),$(foreach gpu_consumer_fence_order,$(GPU_CONSUMER_FENCE_ORDERS),$(foreach cpu_producer_fence_order,$(CPU_PRODUCER_FENCE_ORDERS),$(foreach cpu_consumer_fence_order,$(CPU_CONSUMER_FENCE_ORDERS),$(var_scope)_$(gpu_producer_memory_order)_$(gpu_consumer_memory_order)_$(cpu_producer_memory_order)_$(cpu_consumer_memory_order)_$(gpu_consumer_fence_scope)_$(gpu_producer_fence_scope)_$(gpu_producer_fence_order)_$(gpu_consumer_fence_order)_$(cpu_producer_fence_order)_$(cpu_consumer_fence_order))))))))))))
 
-# ptx: $(foreach var_scope,$(VAR_SCOPES),$(foreach gpu_producer_memory_order,$(GPU_PRODUCER_MEMORY_ORDERS),$(foreach gpu_consumer_memory_order,$(GPU_CONSUMER_MEMORY_ORDERS),$(foreach cpu_producer_memory_order,$(CPU_PRODUCER_MEMORY_ORDERS),$(foreach cpu_consumer_memory_order,$(CPU_CONSUMER_MEMORY_ORDERS),$(foreach gpu_consumer_fence_scope,$(GPU_CONSUMER_FENCE_SCOPES),$(foreach gpu_producer_fence_scope,$(GPU_PRODUCER_FENCE_SCOPES),$(foreach gpu_producer_fence_order,$(GPU_PRODUCER_FENCE_ORDERS),$(foreach gpu_consumer_fence_order,$(GPU_CONSUMER_FENCE_ORDERS),$(foreach cpu_producer_fence_order,$(CPU_PRODUCER_FENCE_ORDERS),$(foreach cpu_consumer_fence_order,$(CPU_CONSUMER_FENCE_ORDERS),$(var_scope)_$(gpu_producer_memory_order)_$(gpu_consumer_memory_order)_$(cpu_producer_memory_order)_$(cpu_consumer_memory_order)_$(gpu_consumer_fence_scope)_$(gpu_producer_fence_scope)_$(gpu_producer_fence_order)_$(gpu_consumer_fence_order)_$(cpu_producer_fence_order)_$(cpu_consumer_fence_order))))))))))))
+# all: $(foreach x_scope,$(VAR_SCOPES_X),$(foreach y_scope,$(VAR_SCOPES_Y),$(foreach producer_fence,$(PRODUCER_FENCES),$(foreach consumer_fence,$(CONSUMER_FENCES),$(foreach order,$(ORDERS),$(OUTPUT)_$(x_scope)_$(y_scope)_$(producer_fence)_$(consumer_fence)_$(order).out)))))
 
-define subst_filename
-$(subst cuda\:\:, ,$(subst std\:\:, ,$(subst memory_order_, ,$(subst thread_scope_, ,$(1))))))
-endef
+all: $(foreach x_scope,$(VAR_SCOPES_X),$(foreach y_scope,$(VAR_SCOPES_Y),$(foreach producer_fence,$(PRODUCER_FENCES),$(foreach producer_scope,$(PRODUCER_FENCE_SCOPES),$(foreach consumer_fence,$(CONSUMER_FENCES),$(foreach consumer_scope,$(CONSUMER_FENCE_SCOPES),$(foreach order,$(ORDERS),$(OUTPUT)-$(x_scope)-$(y_scope)-$(producer_fence)-$(producer_scope)-$(consumer_fence)-$(consumer_scope)-$(order).out)))))))
+
+
+# all:  $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_rel_$(scope)_$(size)_$(buf).out))) $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_rlx_$(scope)_$(size)_$(buf).out))) $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_no_acq_rel_$(scope)_$(size)_$(buf).out))) $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_no_acq_rlx_$(scope)_$(size)_$(buf).out)))
+
+# flag-rel: $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_rel_$(scope)_$(size)_$(buf).out)))
+
+# flag-rlx: $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_rlx_$(scope)_$(size)_$(buf).out)))
+
+# no-acq-flag-rel: $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_no_acq_rel_$(scope)_$(size)_$(buf).out)))
+
+# no-acq-flag-rlx: $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(OUTPUT)_no_acq_rlx_$(scope)_$(size)_$(buf).out)))
 
 define make_target
-$(OUTPUT)_$(call subst_filename,$(1)_$(2)_$(3)_$(4)_$(5)_$(6)_$(7)_$(8)_$(9)_$(10)_$(11)).out:	$(SRCS)
-		$$(NVCC) $$(NVCCFLAGS) -DVAR_SCOPE=$(1) -DGPU_PRODUCER_MEMORY_ORDER=$(2) -DGPU_CONSUMER_MEMORY_ORDER=$(3) -DCPU_PRODUCER_MEMORY_ORDER=$(4) -DCPU_CONSUMER_MEMORY_ORDER=$(5) -DGPU_CONSUMER_FENCE_SCOPE=$(6) -DGPU_PRODUCER_FENCE_SCOPE=$(7) -DGPU_PRODUCER_FENCE_ORDER=$(8) -DGPU_CONSUMER_FENCE_ORDER=$(9) -DCPU_PRODUCER_FENCE_ORDER=$(10) -DCPU_CONSUMER_FENCE_ORDER=$(11) -o $$@ $(SRCS)
-
+$(OUTPUT)-$(1)-$(2)-$(3)-$(4)-$(5)-$(6)-$(7).out: $(SOURCES)
+	$$(NVCC) $$(NVCC_FLAGS) $$(LIBS) -D$(1) -D$(2) -D$(3) -D$(4) -D$(5) -D$(6) -D$(7) -o $$@ $$(SRCS)
 endef
-# $(PTX)_(call subst_filename,$(1)_$(2)_$(3)_$(4)_$(5)_$(6)_$(7)_$(8)_$(9)_$(10)_$(11)).ptx:	$(SRCS)
-# 		$$(NVCC) $$(NVCCFLAGS) -DVAR_SCOPE=$(1) -DGPU_PRODUCER_MEMORY_ORDER=$(2) -DGPU_CONSUMER_MEMORY_ORDER=$(3) -DCPU_PRODUCER_MEMORY_ORDER=$(4) -DCPU_CONSUMER_MEMORY_ORDER=$(5) -DGPU_CONSUMER_FENCE_SCOPE=$(6) -DGPU_PRODUCER_FENCE_SCOPE=$(7) -DGPU_PRODUCER_FENCE_ORDER=$(8) -DGPU_CONSUMER_FENCE_ORDER=$(9) -DCPU_PRODUCER_FENCE_ORDER=$(10) -DCPU_CONSUMER_FENCE_ORDER=$(11) -ptx -o $$@ $(SRCS)
 
-define make_target_no_fence
-$(OUTPUT)_$(1)_$(2)_$(3)_$(4)_$(5).out: $(SRCS)
-		$$(NVCC) $$(NVCCFLAGS) -DVAR_SCOPE=$(1) -DGPU_PRODUCER_MEMORY_ORDER=$(2) -DGPU_CONSUMER_MEMORY_ORDER=$(3) -DCPU_PRODUCER_MEMORY_ORDER=$(4) -DCPU_CONSUMER_MEMORY_ORDER=$(5) -o $$@ $(SRCS)
+# define make_target_rel
+# $(OUTPUT)_rel_$(1)_$(2)_$(3).out: $(SOURCES) $(HEADERS)
+# 	# $$(NVCC) $$(NVCC_FLAGS) $$(LIBS) -D$(1) -D$(2) -D$(3) -DP_H_FLAG_STORE_ORDER_REL  -o $$@ $$(SRC)
+# endef
 
-endef
-# $(PTX)_$(1)_$(2)_$(3)_$(4)_$(5).ptx: $(SRCS)
-# 		$$(NVCC) $$(NVCCFLAGS) -DVAR_SCOPE=$(1) -DGPU_PRODUCER_MEMORY_ORDER=$(2) -DGPU_CONSUMER_MEMORY_ORDER=$(3) -DCPU_PRODUCER_MEMORY_ORDER=$(4) -DCPU_CONSUMER_MEMORY_ORDER=$(5) -ptx -o $$@ $(SRCS)
-	
-$(foreach var_scope,$(VAR_SCOPES),\
-	$(foreach gpu_producer_memory_order,$(GPU_PRODUCER_MEMORY_ORDERS),\
-		$(foreach gpu_consumer_memory_order,$(GPU_CONSUMER_MEMORY_ORDERS),\
-			$(foreach cpu_producer_memory_order,$(CPU_PRODUCER_MEMORY_ORDERS),\
-				$(foreach cpu_consumer_memory_order,$(CPU_CONSUMER_MEMORY_ORDERS),\
-					$(foreach gpu_consumer_fence_scope,$(GPU_CONSUMER_FENCE_SCOPES),\
-						$(foreach gpu_producer_fence_scope,$(GPU_PRODUCER_FENCE_SCOPES),\
-							$(foreach gpu_producer_fence_order,$(GPU_PRODUCER_FENCE_ORDERS),\
-								$(foreach gpu_consumer_fence_order,$(GPU_CONSUMER_FENCE_ORDERS),\
-									$(foreach cpu_producer_fence_order,$(CPU_PRODUCER_FENCE_ORDERS),\
-										$(foreach cpu_consumer_fence_order,$(CPU_CONSUMER_FENCE_ORDERS),\
-											$(eval $(call make_target,$(var_scope),$(gpu_producer_memory_order),$(gpu_consumer_memory_order),$(cpu_producer_memory_order),$(cpu_consumer_memory_order),$(gpu_consumer_fence_scope),$(gpu_producer_fence_scope),$(gpu_producer_fence_order),$(gpu_consumer_fence_order),$(cpu_producer_fence_order),$(cpu_consumer_fence_order))))))))))))))
+# define make_target_rlx
+# $(OUTPUT)_rlx_$(1)_$(2)_$(3).out: $(SOURCES) $(HEADERS)
+# 	$$(NVCC) $$(NVCC_FLAGS) $$(LIBS) -D$(1) -D$(2) -D$(3) -DP_H_FLAG_STORE_ORDER_RLX  -o $$@ $$(SRC)
+# endef
 
-$(foreach var_scope,$(VAR_SCOPES),$(foreach gpu_producer_memory_order,$(GPU_PRODUCER_MEMORY_ORDERS),$(foreach gpu_consumer_memory_order,$(GPU_CONSUMER_MEMORY_ORDERS),$(foreach cpu_producer_memory_order,$(CPU_PRODUCER_MEMORY_ORDERS),$(foreach cpu_consumer_memory_order,$(CPU_CONSUMER_MEMORY_ORDERS),$(eval $(call make_target_no_fence,$(var_scope),$(gpu_producer_memory_order),$(gpu_consumer_memory_order),$(cpu_producer_memory_order),$(cpu_consumer_memory_order))))))))
+# define make_target_no_acq_rel
+# $(OUTPUT)_no_acq_rel_$(1)_$(2)_$(3).out: $(SOURCES) $(HEADERS)
+# 	$$(NVCC) $$(NVCC_FLAGS) $$(LIBS) -D$(1) -D$(2) -D$(3) -DNO_ACQ -DP_H_FLAG_STORE_ORDER_REL  -o $$@ $$(SRC)
+# endef
 
-clean:
-		rm -f *.out *.ptx *.sass
+# define make_target_no_acq_rlx
+# $(OUTPUT)_no_acq_rlx_$(1)_$(2)_$(3).out: $(SOURCES) $(HEADERS)
+# 	$$(NVCC) $$(NVCC_FLAGS) $$(LIBS) -D$(1) -D$(2) -D$(3) -DNO_ACQ -DP_H_FLAG_STORE_ORDER_RLX  -o $$@ $$(SRC)
+# endef
+
+$(foreach x_scope,$(VAR_SCOPES_X),$(foreach y_scope,$(VAR_SCOPES_Y),$(foreach producer_fence,$(PRODUCER_FENCES),$(foreach producer_scope,$(PRODUCER_FENCE_SCOPES),$(foreach consumer_fence,$(CONSUMER_FENCES),$(foreach consumer_scope,$(CONSUMER_FENCE_SCOPES),$(foreach order,$(ORDERS),$(eval $(call make_target,$(x_scope),$(y_scope),$(producer_fence),$(producer_scope),$(consumer_fence),$(consumer_scope),$(order))))))))))
+
+# $(foreach x_scope,$(VAR_SCOPES_X),$(foreach y_scope,$(VAR_SCOPES_Y),$(foreach producer_fence,$(PRODUCER_FENCES),$(foreach consumer_fence,$(CONSUMER_FENCES),$(foreach order,$(ORDERS),$(eval $(call make_target,$(x_scope),$(y_scope),$(producer_fence),$(consumer_fence),$(order))))))))
+# $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(eval $(call make_target,$(scope),$(size),$(buf))))))
+# $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(eval $(call make_target_rel,$(scope),$(size),$(buf))))))
+# $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(eval $(call make_target_rlx,$(scope),$(size),$(buf))))))
+# $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(eval $(call make_target_no_acq_rel,$(scope),$(size),$(buf))))))
+# $(foreach scope,$(SCOPES),$(foreach size,$(SIZES),$(foreach buf,$(BUFFER),$(eval $(call make_target_no_acq_rlx,$(scope),$(size),$(buf))))))
