@@ -72,7 +72,7 @@
 // #define CPU_PRODUCER_ST_Y cuda::memory_order_relaxed
 // #endif
 
-#define CACHING
+// #define CACHING
 
 #ifdef PRODUCER_FENCE_SCOPE_CTA
 #define PRODUCER_FENCE_SCOPE cuda::thread_scope_thread
@@ -83,6 +83,7 @@
 #elif defined(PRODUCER_FENCE_SCOPE_SYS)
 #define PRODUCER_FENCE_SCOPE cuda::thread_scope_system
 #endif
+
 
 #ifdef CONSUMER_FENCE_SCOPE_CTA
 #define CONSUMER_FENCE_SCOPE cuda::thread_scope_thread
@@ -96,6 +97,10 @@
 
 
 #ifdef RLX_RLX
+// #define GPU_PRODUCER_ST_X cuda::memory_order_release
+// #define GPU_CONSUMER_LD_X cuda::memory_order_acquire
+// #define CPU_PRODUCER_ST_X cuda::memory_order_release
+// #define CPU_CONSUMER_LD_X cuda::memory_order_acquire
 #define GPU_PRODUCER_ST_X cuda::memory_order_relaxed
 #define GPU_CONSUMER_LD_X cuda::memory_order_relaxed
 #define CPU_PRODUCER_ST_X cuda::memory_order_relaxed
@@ -105,6 +110,10 @@
 #define GPU_CONSUMER_LD_Y cuda::memory_order_relaxed
 #define CPU_CONSUMER_LD_Y cuda::memory_order_relaxed
 #elif defined(REL_ACQ)
+// #define GPU_PRODUCER_ST_X cuda::memory_order_release
+// #define GPU_CONSUMER_LD_X cuda::memory_order_acquire
+// #define CPU_PRODUCER_ST_X cuda::memory_order_release
+// #define CPU_CONSUMER_LD_X cuda::memory_order_acquire
 #define GPU_PRODUCER_ST_X cuda::memory_order_relaxed
 #define GPU_CONSUMER_LD_X cuda::memory_order_relaxed
 #define CPU_PRODUCER_ST_X cuda::memory_order_relaxed
@@ -114,6 +123,10 @@
 #define GPU_CONSUMER_LD_Y cuda::memory_order_acquire
 #define CPU_CONSUMER_LD_Y cuda::memory_order_acquire
 #elif defined(RLX_ACQ)
+// #define GPU_PRODUCER_ST_X cuda::memory_order_release
+// #define GPU_CONSUMER_LD_X cuda::memory_order_acquire
+// #define CPU_PRODUCER_ST_X cuda::memory_order_release
+// #define CPU_CONSUMER_LD_X cuda::memory_order_acquire
 #define GPU_PRODUCER_ST_X cuda::memory_order_relaxed
 #define GPU_CONSUMER_LD_X cuda::memory_order_relaxed
 #define CPU_PRODUCER_ST_X cuda::memory_order_relaxed
@@ -123,6 +136,10 @@
 #define GPU_CONSUMER_LD_Y cuda::memory_order_acquire
 #define CPU_CONSUMER_LD_Y cuda::memory_order_acquire
 #elif defined(REL_RLX)
+// #define GPU_PRODUCER_ST_X cuda::memory_order_release
+// #define GPU_CONSUMER_LD_X cuda::memory_order_acquire
+// #define CPU_PRODUCER_ST_X cuda::memory_order_release
+// #define CPU_CONSUMER_LD_X cuda::memory_order_acquire
 #define GPU_PRODUCER_ST_X cuda::memory_order_relaxed
 #define GPU_CONSUMER_LD_X cuda::memory_order_relaxed
 #define CPU_PRODUCER_ST_X cuda::memory_order_relaxed
@@ -134,8 +151,7 @@
 #endif
 
 
-
-#if defined(PRODUCER_FENCE_RLX)
+#ifdef PRODUCER_FENCE_RLX
 #define GPU_PRODUCER_FENCE() cuda::atomic_thread_fence(cuda::memory_order_relaxed, PRODUCER_FENCE_SCOPE)
 #define CPU_PRODUCER_FENCE() std::atomic_thread_fence(std::memory_order_relaxed)
 #elif defined(PRODUCER_FENCE_ACQ_REL)
@@ -149,7 +165,8 @@
 #define CPU_PRODUCER_FENCE()
 #endif
 
-#if defined(CONSUMER_FENCE_RLX)
+
+#ifdef CONSUMER_FENCE_RLX
 #define GPU_CONSUMER_FENCE() cuda::atomic_thread_fence(cuda::memory_order_relaxed, CONSUMER_FENCE_SCOPE)
 #define CPU_CONSUMER_FENCE() std::atomic_thread_fence(std::memory_order_relaxed)
 #elif defined(CONSUMER_FENCE_ACQ_REL)
@@ -170,7 +187,7 @@
 #define TO_STRING(x) #x
 #define PRINT_DEFINE(name) std::cout << #name << " = " << TO_STRING(name) << std::endl;
 
-constexpr auto kNumBlocks = 8;
+constexpr auto kNumBlocks = 1;
 constexpr auto kNumThreads = 64;
 
 #ifdef X_CTA
@@ -182,6 +199,7 @@ constexpr auto kNumThreads = 64;
 #elif defined(X_SYS)
 #define TX bufferElement_s
 #endif 
+
 
 #ifdef Y_CTA
 #define TY bufferElement_t
@@ -241,13 +259,20 @@ void print_usage() {
 
 // #define HANDLE_ERROR(err) (handle_error(err, __FILE__, __LINE__))
 
-__device__ void GPUMemoryStress(volatile int* stress_array, int seed, volatile int * array_size, volatile cuda::atomic<int, cuda::thread_scope_system> * stop_signal) {
+__device__ void GPUMemoryStress(volatile int* stress_array, volatile int * array_size, volatile cuda::atomic<int, cuda::thread_scope_system> * stop_signal) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = gridDim.x * blockDim.x;
     int idx = (tid * 17) % *array_size; // Ensure each thread starts differently
 
     while (stop_signal->load() == 0) {
-        stress_array[idx] = stress_array[idx] + 1; // Read-modify-write
+        int idx1 = idx;
+        int idx2 = (idx + stride) % *array_size;
+
+        // Exchange values between two locations
+        int temp = stress_array[idx1];
+        stress_array[idx1] = stress_array[idx2];
+        stress_array[idx2] = temp;
+
         idx = (idx + stride) % *array_size;
     }
 }
@@ -261,7 +286,7 @@ void CPUMemoryStress(int tid, volatile int* array, volatile int* stop_thread, in
 }
 
 template <typename S>
-__device__ void gpu_consumer_function(TX* volatile com_x, TY* volatile com_y, S* volatile u_com, volatile int* num_iters, int* buffer_r0, int * buffer_r1) {
+__device__ void gpu_consumer_function(TX* volatile com_x, TY* volatile com_y, S* volatile u_com, volatile int* num_iters, cuda::atomic<int, cuda::thread_scope_system>* buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1) {
 
     #ifdef CACHING
     uint value = 0;
@@ -274,20 +299,22 @@ __device__ void gpu_consumer_function(TX* volatile com_x, TY* volatile com_y, S*
 
     for (int iteration_number = 0; iteration_number < *num_iters; iteration_number++) {
         
-        volatile TY* temp_2 = &com_y[iteration_number]; // Y
-        volatile TX* temp_3 = &com_x[iteration_number]; // X
+        volatile TY* temp_y = &com_y[iteration_number]; // Y
+        volatile TX* temp_x = &com_x[iteration_number]; // X
 
         u_com[iteration_number].fetch_add(1);
         while (u_com[iteration_number] < 2);
     
-        int val_2 = (int) temp_2->data.load(GPU_CONSUMER_LD_Y); // load Y
+        int val_y = (int) temp_y->data.load(GPU_CONSUMER_LD_Y); // load Y
     
         GPU_CONSUMER_FENCE();
 
-        int val_3 = (int) temp_3->data.load(GPU_CONSUMER_LD_X); // load X
+        int val_x = (int) temp_x->data.load(GPU_CONSUMER_LD_X); // load X
+
+        cuda::atomic_thread_fence(cuda::memory_order_seq_cst, cuda::thread_scope_thread);
     
-        buffer_r0[iteration_number] = val_2; // r0 = Y
-        buffer_r1[iteration_number] = val_3; // r1 = X
+        buffer_r0[iteration_number].store(val_y, cuda::memory_order_relaxed); // r0 = Y
+        buffer_r1[iteration_number].store(val_x, cuda::memory_order_relaxed); // r1 = X
     }
 }
 
@@ -305,21 +332,21 @@ __device__ void gpu_producer_function(TX* volatile com_x, TY* volatile com_y, S*
 
     for (int iteration_number = 0; iteration_number < *num_iters; iteration_number++) {
 
-        volatile TX* temp_2 = &com_x[iteration_number]; // X
-        volatile TY* temp_3 = &com_y[iteration_number]; // Y
+        volatile TX* temp_x = &com_x[iteration_number]; // X
+        volatile TY* temp_y = &com_y[iteration_number]; // Y
 
         u_com[iteration_number].fetch_add(1);   
 
-        int val_3 = iteration_number + 2; // Y
-        int val_2 = iteration_number + 1; // X
+        int val_y = iteration_number + 2; // Y
+        int val_x = iteration_number + 1; // X
 
         while (u_com[iteration_number].load() < 2);
 
-        temp_2->data.store(val_2, GPU_PRODUCER_ST_X); // store X
+        temp_x->data.store(val_x, GPU_PRODUCER_ST_X); // store X
 
         GPU_PRODUCER_FENCE();
 
-        temp_3->data.store(val_3, GPU_PRODUCER_ST_Y); // store Y
+        temp_y->data.store(val_y, GPU_PRODUCER_ST_Y); // store Y
     }
 }
 
@@ -337,26 +364,26 @@ void cpu_producer_function(volatile TX* com_x, volatile TY* com_y, volatile S* u
 
     for (int iteration_number = 0; iteration_number < num_iters; iteration_number++) {
 
-        volatile TX* temp_0 = &com_x[iteration_number]; // X
-        volatile TY* temp_1 = &com_y[iteration_number]; // Y
+        volatile TX* temp_x = &com_x[iteration_number]; // X
+        volatile TY* temp_y = &com_y[iteration_number]; // Y
         
         u_com[iteration_number].fetch_add(1);
 
-        int val_0 = iteration_number + 1;
-        int val_1 = iteration_number + 2;
+        int val_x = iteration_number + 1;
+        int val_y = iteration_number + 2;
 
         while (u_com[iteration_number].load() < 2);
 
-        temp_0->data.store(val_0, CPU_PRODUCER_ST_X); // store X
+        temp_x->data.store(val_x, CPU_PRODUCER_ST_X); // store X
 
         CPU_PRODUCER_FENCE();
 
-        temp_1->data.store(val_1, CPU_PRODUCER_ST_Y); // store Y
+        temp_y->data.store(val_y, CPU_PRODUCER_ST_Y); // store Y
     }
 }
 
 template <typename S>
-void cpu_consumer_function(volatile TX* com_x, volatile TY* com_y, volatile S* u_com, int num_iters, volatile int* buffer_r0, volatile int* buffer_r1) {
+void cpu_consumer_function(volatile TX* com_x, volatile TY* com_y, volatile S* u_com, int num_iters, volatile cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, volatile cuda::atomic<int, cuda::thread_scope_system>* buffer_r1) {
 
     #ifdef CACHING
     uint value = 0;
@@ -369,45 +396,64 @@ void cpu_consumer_function(volatile TX* com_x, volatile TY* com_y, volatile S* u
     
     for (int iteration_number = 0; iteration_number < num_iters; iteration_number++) {
 
-        volatile TY* temp_2 = &com_y[iteration_number]; // Y
-        volatile TX* temp_3 = &com_x[iteration_number]; // X
+        volatile TY* temp_y = &com_y[iteration_number]; // Y
+        volatile TX* temp_x = &com_x[iteration_number]; // X
 
         u_com[iteration_number].fetch_add(1);
         while (u_com[iteration_number].load() < 2);
 
-        int val_2 = temp_2->data.load(CPU_CONSUMER_LD_Y); // load Y
+        int val_y = temp_y->data.load(CPU_CONSUMER_LD_Y); // load Y
 
         CPU_CONSUMER_FENCE();
 
-        int val_3 = temp_3->data.load(CPU_CONSUMER_LD_X); // load X
+        int val_x = temp_x->data.load(CPU_CONSUMER_LD_X); // load X
 
-        buffer_r0[iteration_number] = val_2; // r0 = Y
-        buffer_r1[iteration_number] = val_3; // r1 = X
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
+        buffer_r0[iteration_number].store(val_y, cuda::memory_order_relaxed); // r0 = Y
+        buffer_r1[iteration_number].store(val_x, cuda::memory_order_relaxed); // r1 = X
     }
 
 }
 
 template <typename S>
-__global__ void main_gpu_kernel_producer(TX * volatile com_x, TY * volatile com_y, S* volatile u_com, volatile int* iteration_number, int * buffer_r0, int * buffer_r1, volatile int* memory_stress_array, volatile int * array_size, volatile S * gpu_stop_signal) {
+__global__ void main_gpu_kernel_producer(TX * volatile com_x, TY * volatile com_y, S* volatile u_com, volatile int* iteration_number, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, volatile int* memory_stress_array, volatile int * array_size, volatile S * gpu_stop_signal) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (tid == 0) {
         gpu_producer_function(com_x, com_y, u_com, iteration_number);
     } else {
-        GPUMemoryStress(memory_stress_array, tid * tid, array_size, gpu_stop_signal);
+        GPUMemoryStress(memory_stress_array, array_size, gpu_stop_signal);
     }
-
+    
     gpu_stop_signal->fetch_add(1);
 }
 
 template <typename S>
-__global__ void main_gpu_kernel_consumer(TX* volatile com_x, TY* volatile com_y, S* volatile u_com, volatile int* iteration_number, int * buffer_r0, int * buffer_r1, volatile int* memory_stress_array, volatile int * array_size, volatile S * gpu_stop_signal) {
+__global__ void main_gpu_kernel_consumer(TX* volatile com_x, TY* volatile com_y, S* volatile u_com, volatile int* iteration_number, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, volatile int* memory_stress_array, volatile int * array_size, volatile S * gpu_stop_signal) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     
     if (tid == 0) {
         gpu_consumer_function(com_x, com_y, u_com, iteration_number, buffer_r0, buffer_r1);
     } else {
-        GPUMemoryStress(memory_stress_array, tid * tid, array_size, gpu_stop_signal);
+        GPUMemoryStress(memory_stress_array, array_size, gpu_stop_signal);
+    }
+    
+    gpu_stop_signal->fetch_add(1);
+}
+
+template <typename S>
+__global__ void main_gpu_kernel_producer_consumer(TX* volatile com_x, TY* volatile com_y, S* volatile u_com, volatile int* iteration_number, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, volatile int* memory_stress_array, volatile int * array_size, volatile S * gpu_stop_signal) {
+    // int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int tid = threadIdx.x;
+    int bid = blockIdx.x;
+    
+    if (tid == 0 && bid == 0) {
+        gpu_producer_function(com_x, com_y, u_com, iteration_number);
+    } else if (tid == 0 && bid == 1) {
+        gpu_consumer_function(com_x, com_y, u_com, iteration_number, buffer_r0, buffer_r1);
+    } else {
+        GPUMemoryStress(memory_stress_array, array_size, gpu_stop_signal);
     }
     
     gpu_stop_signal->fetch_add(1);
@@ -421,7 +467,7 @@ typedef struct {
 } MP_heuristics;
 
 
-MP_heuristics calculate_heuristics(TX *com_x, TY *com_y, int * buffer_r0, int * buffer_r1, int num_iters) {
+MP_heuristics calculate_heuristics(TX *com_x, TY *com_y, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, int num_iters) {
 
     MP_heuristics heuristics = {};
 
@@ -431,19 +477,13 @@ MP_heuristics calculate_heuristics(TX *com_x, TY *com_y, int * buffer_r0, int * 
     heuristics.MP_1_1 = 0; // MP successful propagation behavior (r1 = it + 1, r0 = it + 2)
 
     for (int iteration_number = 0; iteration_number < num_iters; iteration_number++) {
-        if ((buffer_r1[iteration_number] == iteration_number + 1) && (buffer_r0[iteration_number] == 0)) {
-            heuristics.MP_1_0++;
-        }
-
-        if ((buffer_r1[iteration_number] == 0) && (buffer_r0[iteration_number] == 0)) {
-            heuristics.MP_0_0++;
-        }
-
-        if ((buffer_r1[iteration_number] == 0) && (buffer_r0[iteration_number] == iteration_number + 2)) {
+        if ((buffer_r1[iteration_number].load() == iteration_number + 1) && (buffer_r0[iteration_number].load() == 0)) {
             heuristics.MP_0_1++;
-        }
-
-        if ((buffer_r1[iteration_number] == iteration_number + 1) && (buffer_r0[iteration_number] == iteration_number + 2)) {
+        } else if ((buffer_r1[iteration_number].load() == 0) && (buffer_r0[iteration_number].load() == 0)) {
+            heuristics.MP_0_0++;
+        } else if ((buffer_r1[iteration_number].load() == 0) && (buffer_r0[iteration_number].load() == iteration_number + 2)) {
+            heuristics.MP_1_0++;
+        } else if ((buffer_r1[iteration_number].load() == iteration_number + 1) && (buffer_r0[iteration_number].load() == iteration_number + 2)) {
             heuristics.MP_1_1++;
         }
     }
@@ -460,7 +500,7 @@ MP_heuristics add_heuristics(MP_heuristics h1, MP_heuristics h2) {
     return h;
 }
 
-void gpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, int * buffer_r0, int * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
+void gpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
     int * stop_thread = new int[num_threads];
     // int * gpu_stop_signal = (int *) malloc(sizeof(int));
     cuda::atomic<int, cuda::thread_scope_system> * gpu_stop_signal = (cuda::atomic<int, cuda::thread_scope_system> *) malloc(sizeof(cuda::atomic<int, cuda::thread_scope_system>));
@@ -487,6 +527,9 @@ void gpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
         com_y[iteration_number].data.store(0);
 
         u_com[iteration_number].store(0);
+
+        buffer_r0[iteration_number].store(0);
+        buffer_r1[iteration_number].store(0);
 
     }
     std::thread main_test_thread;
@@ -518,7 +561,7 @@ void gpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
 
 }
 
-void cpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, int * buffer_r0, int * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
+void cpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
     int * stop_thread = new int[num_threads];
     cuda::atomic<int, cuda::thread_scope_system> * gpu_stop_signal = (cuda::atomic<int, cuda::thread_scope_system> *) malloc(sizeof(cuda::atomic<int, cuda::thread_scope_system>));
     gpu_stop_signal->store(0);
@@ -542,6 +585,8 @@ void cpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
         com_y[iteration_number].data.store(0);
 
         u_com[iteration_number].store(0);
+        buffer_r0[iteration_number].store(0);
+        buffer_r1[iteration_number].store(0);
     }
     std::thread main_test_thread;
     main_test_thread = std::thread(cpu_producer_function<cuda::atomic<int, cuda::thread_scope_system>>, com_x, com_y, u_com, test_iter);
@@ -572,7 +617,7 @@ void cpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
     return;
 }
 
-void cpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, int * buffer_r0, int * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
+void cpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
     int * stop_thread = new int[num_threads];
 
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
@@ -596,6 +641,9 @@ void cpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
         com_y[iteration_number].data.store(0);
 
         u_com[iteration_number].store(0);
+
+        buffer_r0[iteration_number].store(0);
+        buffer_r1[iteration_number].store(0);
         
     }
     std::thread consumer_thread;
@@ -606,10 +654,6 @@ void cpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
 
     producer_thread.join();
     consumer_thread.join();
-
-    // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    // std::cout << "Time taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << std::endl;
-    // std::cout << std::endl;
 
     MP_heuristics heuristics = calculate_heuristics(com_x, com_y, buffer_r0, buffer_r1, test_iter);
 
@@ -633,12 +677,11 @@ void cpu_producer_cpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
 
 }
 
-void gpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, int * buffer_r0, int * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
+void gpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_com, TX * com_x, TY * com_y, cuda::atomic<int, cuda::thread_scope_system> * buffer_r0, cuda::atomic<int, cuda::thread_scope_system> * buffer_r1, int * memory_stress_array, int memory_stress_array_size, int test_iter, int num_threads) {
     int * stop_thread = new int[num_threads];
     cuda::atomic<int, cuda::thread_scope_system> * gpu_stop_signal = (cuda::atomic<int, cuda::thread_scope_system> *) malloc(sizeof(cuda::atomic<int, cuda::thread_scope_system>));
     gpu_stop_signal->store(0);
 
-    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     std::thread stress_threads[num_threads];
     for (int st = 0; st < num_threads; st++) {
         stop_thread[st] = 0;
@@ -659,17 +702,14 @@ void gpu_producer_gpu_consumer(cuda::atomic<int, cuda::thread_scope_system> * u_
         com_y[iteration_number].data.store(0);
 
         u_com[iteration_number].store(0);
-    }
-    cudaStream_t stream_a, stream_b;
-    cudaStreamCreate(&stream_a);
-    cudaStreamCreate(&stream_b);
 
-    main_gpu_kernel_consumer<<<kNumBlocks, kNumThreads, 0, stream_a>>>(com_x, com_y, u_com, &test_iter, buffer_r0, buffer_r1, memory_stress_array, &memory_stress_array_size, gpu_stop_signal);
-    main_gpu_kernel_producer<<<kNumBlocks, kNumThreads, 0, stream_b>>>(com_x, com_y, u_com, &test_iter, buffer_r0, buffer_r1, memory_stress_array, &memory_stress_array_size, gpu_stop_signal);
+        buffer_r0[iteration_number].store(0);
+        buffer_r1[iteration_number].store(0);
+    }
+
+    main_gpu_kernel_producer_consumer<<<kNumBlocks + 1, kNumThreads, 0>>>(com_x, com_y, u_com, &test_iter, buffer_r0, buffer_r1, memory_stress_array, &memory_stress_array_size, gpu_stop_signal);
+    
     cudaDeviceSynchronize();
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    // std::cout << "Time taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << std::endl;
-    // std::cout << std::endl;
 
     MP_heuristics heuristics = calculate_heuristics(com_x, com_y, buffer_r0, buffer_r1, test_iter);
 
@@ -732,13 +772,24 @@ int main(int argc, char** argv) {
     std::cout << "Memory Stress Array Size: " << memory_stress_array_size << std::endl;
     std::cout << "Stress Threads: " << num_threads << std::endl;
 
+    // PRINT_DEFINE(CPU_CONSUMER_LD_X);
+    // PRINT_DEFINE(CPU_CONSUMER_LD_Y);
+    // PRINT_DEFINE(GPU_CONSUMER_LD_X);
+    // PRINT_DEFINE(GPU_CONSUMER_LD_Y);
+    // PRINT_DEFINE(CPU_PRODUCER_ST_X);
+    // PRINT_DEFINE(CPU_PRODUCER_ST_Y);
+    // PRINT_DEFINE(GPU_PRODUCER_ST_X);
+    // PRINT_DEFINE(GPU_PRODUCER_ST_Y);
+
+    // PRINT_DEFINE(TX);
+    // PRINT_DEFINE(TY);
 
     cuda::atomic<int, cuda::thread_scope_system>* u_com = nullptr;
     TX* com_x = nullptr;
     TY* com_y = nullptr;
 
-    int *buffer_r0 = nullptr; // r0 stores Y
-    int *buffer_r1 = nullptr; // r1 stores X
+    cuda::atomic<int, cuda::thread_scope_system> *buffer_r0 = nullptr; // r0 stores Y
+    cuda::atomic<int, cuda::thread_scope_system> *buffer_r1 = nullptr; // r1 stores X
 
 
     u_com = (cuda::atomic<int, cuda::thread_scope_system>*) malloc(test_iter * sizeof(cuda::atomic<int, cuda::thread_scope_system>));
@@ -746,8 +797,8 @@ int main(int argc, char** argv) {
     com_x = (TX*) malloc(totalSize * sizeof(TX));
     com_y = (TY*) malloc(totalSize * sizeof(TY));
 
-    buffer_r0 = (int*) malloc(test_iter * sizeof(int));
-    buffer_r1 = (int*) malloc(test_iter * sizeof(int));
+    buffer_r0 = (cuda::atomic<int, cuda::thread_scope_system>*) malloc(test_iter * sizeof(cuda::atomic<int, cuda::thread_scope_system>));
+    buffer_r1 = (cuda::atomic<int, cuda::thread_scope_system>*) malloc(test_iter * sizeof(cuda::atomic<int, cuda::thread_scope_system>));
 
 
     int * memory_stress_array = (int*) malloc(memory_stress_array_size * sizeof(int));
